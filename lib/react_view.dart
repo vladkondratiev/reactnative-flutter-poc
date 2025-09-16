@@ -1,7 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_brownfield_app/react_view_android.dart';
-import 'package:flutter_brownfield_app/react_view_android_texture_layer.dart';
 import 'package:flutter_brownfield_app/react_view_ios.dart';
 
 /// View that renders a React Native module.
@@ -14,21 +12,12 @@ class ReactView extends StatelessWidget {
   /// on the JavaScript side.
   final String moduleName;
 
-  /// Should use texture layer mechanism (if aviailable on the platform).
-  ///
-  /// Currently only supports Android
-  final bool useTextureLayer;
-
   const ReactView(
-      {super.key, required this.moduleName, this.useTextureLayer = false});
+      {super.key, required this.moduleName});
 
   @override
   Widget build(BuildContext context) {
     switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return useTextureLayer
-            ? ReactViewAndroidTextureLayer(moduleName: moduleName)
-            : ReactViewAndroid(moduleName: moduleName);
       case TargetPlatform.iOS:
         return ReactViewIos(moduleName: moduleName);
       default:
