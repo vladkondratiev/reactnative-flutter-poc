@@ -3,16 +3,20 @@
  * Matches the Flutter SSO login screen design and functionality
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Modal,
+  EventSubscription,
+  NativeModules,
+  NativeEventEmitter,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+const { AuthCodeEmitter: AuthCodeEmitterModule } = NativeModules;
 
 export const SSOLoginScreen = () => {
   return (
@@ -25,8 +29,25 @@ export const SSOLoginScreen = () => {
 const SSOLoginScreenContent = () => {
   const [showWebView, setShowWebView] = useState(false);
   const [authCode, setAuthCode] = useState<string | null>(null);
+  const eventSubscription = useRef<EventSubscription | null>(null);
 
   const ssoUrl = 'https://smartcrowd-auth-demo.my.smartcrowd.ae/login?client_id=5m1plb2f985bq2ppu7n8dshhnd&response_type=code&scope=email+openid+phone&redirect_uri=http%3A%2F%2Flocalhost%3A3000';
+
+  useEffect(() => {
+    // Set up event listener for auth code events
+    if (AuthCodeEmitterModule) {
+      const eventEmitter = new NativeEventEmitter(AuthCodeEmitterModule);
+      eventSubscription.current = eventEmitter.addListener('onAuthCodeReceived', (data: any) => {
+        console.log('Auth code received in React Native:', data.authCode);
+        setAuthCode(data.authCode);
+      });
+    }
+
+    return () => {
+      eventSubscription.current?.remove();
+      eventSubscription.current = null;
+    };
+  }, []);
 
   const onSSOButtonPressed = () => {
     setShowWebView(true);
@@ -48,6 +69,11 @@ const SSOLoginScreenContent = () => {
         console.log('Authorization code received:', code);
         setAuthCode(code);
         setShowWebView(false);
+
+        // Emit the auth code event to Flutter
+        if (AuthCodeEmitterModule) {
+          AuthCodeEmitterModule.emitAuthCode(code);
+        }
       }
     }
   };
@@ -79,6 +105,21 @@ const SSOLoginScreenContent = () => {
         >
           <Text style={styles.loginButtonIcon}>🔐</Text>
           <Text style={styles.loginButtonText}>Login with SSO</Text>
+        </TouchableOpacity>
+
+        {/* Temporary debug button */}
+        <TouchableOpacity
+          style={[styles.loginButton, { backgroundColor: '#4caf50', marginTop: 12 }]}
+          onPress={() => {
+            console.log('Debug: invoking emitAuthCode with TEST_CODE_123');
+            if (AuthCodeEmitterModule) {
+              AuthCodeEmitterModule.emitAuthCode('TEST_CODE_123');
+            }
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.loginButtonIcon}>🧪</Text>
+          <Text style={styles.loginButtonText}>Send Test Code</Text>
         </TouchableOpacity>
       </View>
 
