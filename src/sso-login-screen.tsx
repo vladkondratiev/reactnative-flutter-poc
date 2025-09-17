@@ -10,12 +10,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
+  ScrollView,
   EventSubscription,
   NativeModules,
   NativeEventEmitter,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import { useTokenExchange } from './hooks/useTokenExchange';
 const { AuthCodeEmitter: AuthCodeEmitterModule } = NativeModules;
 
 export const SSOLoginScreen = () => {
@@ -30,11 +33,11 @@ const SSOLoginScreenContent = () => {
   const [showWebView, setShowWebView] = useState(false);
   const [authCode, setAuthCode] = useState<string | null>(null);
   const eventSubscription = useRef<EventSubscription | null>(null);
+  const { exchangeToken, isLoading, error, tokenData, reset } = useTokenExchange();
 
   const ssoUrl = 'https://smartcrowd-auth-demo.my.smartcrowd.ae/login?client_id=5m1plb2f985bq2ppu7n8dshhnd&response_type=code&scope=email+openid+phone&redirect_uri=http%3A%2F%2Flocalhost%3A3000';
 
   useEffect(() => {
-    // Set up event listener for auth code events
     if (AuthCodeEmitterModule) {
       const eventEmitter = new NativeEventEmitter(AuthCodeEmitterModule);
       eventSubscription.current = eventEmitter.addListener('onAuthCodeReceived', (data: any) => {
@@ -48,6 +51,13 @@ const SSOLoginScreenContent = () => {
       eventSubscription.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (authCode && !showWebView) {
+      console.log('useEffect calling exchangeToken with authCode:', authCode);
+      exchangeToken(authCode);
+    }
+  }, [authCode, showWebView, exchangeToken]);
 
   const onSSOButtonPressed = () => {
     setShowWebView(true);
@@ -64,6 +74,7 @@ const SSOLoginScreenContent = () => {
     if (url.includes('?code=')) {
       const codeMatch = url.match(/[?&]code=([^&]*)/);
       const code = codeMatch ? codeMatch[1] : null;
+      console.log(' >>> code', code);
 
       if (code) {
         console.log('Authorization code received:', code);
@@ -80,48 +91,73 @@ const SSOLoginScreenContent = () => {
 
   return (
     <>
-      <View style={styles.container}>
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🔐</Text>
-        </View>
-
-        <Text style={styles.title}>Single Sign-On</Text>
-
-        <Text style={styles.subtitle}>
-          Sign in with your corporate credentials
-        </Text>
-
-        {authCode && (
-          <View style={styles.authCodeContainer}>
-            <Text style={styles.authCodeLabel}>Authorization Code:</Text>
-            <Text style={styles.authCodeText}>{authCode}</Text>
+      <ScrollView bounces={false} contentContainerStyle={styles.scrollViewContainer}>
+        <View style={styles.container}>
+          <View style={styles.iconContainer}>
+            <Text style={styles.icon}>🔐</Text>
           </View>
-        )}
 
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={onSSOButtonPressed}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.loginButtonIcon}>🔐</Text>
-          <Text style={styles.loginButtonText}>Login with SSO</Text>
-        </TouchableOpacity>
+          <Text style={styles.title}>Single Sign-On</Text>
 
-        {/* Temporary debug button */}
-        <TouchableOpacity
-          style={[styles.loginButton, { backgroundColor: '#4caf50', marginTop: 12 }]}
-          onPress={() => {
-            console.log('Debug: invoking emitAuthCode with TEST_CODE_123');
-            if (AuthCodeEmitterModule) {
-              AuthCodeEmitterModule.emitAuthCode('TEST_CODE_123');
-            }
-          }}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.loginButtonIcon}>🧪</Text>
-          <Text style={styles.loginButtonText}>Send Test Code</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={styles.subtitle}>
+            Sign in with your corporate credentials
+          </Text>
+
+          {authCode && (
+            <View style={styles.authCodeContainer}>
+              <Text style={styles.authCodeLabel}>Authorization Code:</Text>
+              <Text style={styles.authCodeText}>{authCode}</Text>
+            </View>
+          )}
+
+          {isLoading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#2196f3" />
+              <Text style={styles.loadingText}>Exchanging code for tokens...</Text>
+            </View>
+          )}
+
+          {error && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorLabel}>Token Exchange Error:</Text>
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => authCode && exchangeToken(authCode)}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {tokenData && (
+            <View style={styles.tokenContainer}>
+              <Text style={styles.tokenLabel}>✅ Token Exchange Successful!</Text>
+              <Text style={styles.tokenText}>Access Token: {tokenData.access_token.substring(0, 20)}...</Text>
+              <Text style={styles.tokenText}>Token Type: {tokenData.token_type}</Text>
+              <Text style={styles.tokenText}>Expires In: {tokenData.expires_in} seconds</Text>
+              {tokenData.id_token && (
+                <Text style={styles.tokenText}>ID Token: {tokenData.id_token.substring(0, 20)}...</Text>
+              )}
+              {tokenData.refresh_token && (
+                <Text style={styles.tokenText}>Refresh Token: {tokenData.refresh_token.substring(0, 20)}...</Text>
+              )}
+              {tokenData.scope && (
+                <Text style={styles.tokenText}>Scope: {tokenData.scope}</Text>
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.loginButton}
+            onPress={onSSOButtonPressed}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.loginButtonIcon}>🔐</Text>
+            <Text style={styles.loginButtonText}>Login with SSO</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       <Modal
         visible={showWebView}
@@ -152,6 +188,9 @@ const SSOLoginScreenContent = () => {
 };
 
 const styles = StyleSheet.create({
+  scrollViewContainer: {
+    paddingVertical: 40,
+  },
   container: {
     flex: 1,
     justifyContent: 'center',
@@ -266,5 +305,85 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#e0e0e0',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#f0f8ff',
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#2196f3',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#1976d2',
+    marginLeft: 8,
+  },
+  errorContainer: {
+    width: '100%',
+    backgroundColor: '#ffebee',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#f44336',
+  },
+  errorLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#d32f2f',
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#333333',
+    fontFamily: 'monospace',
+    backgroundColor: '#ffffff',
+    padding: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 12,
+  },
+  retryButton: {
+    backgroundColor: '#f44336',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tokenContainer: {
+    width: '100%',
+    backgroundColor: '#e8f5e8',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#4caf50',
+  },
+  tokenLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2e7d32',
+    marginBottom: 8,
+  },
+  tokenText: {
+    fontSize: 12,
+    color: '#333333',
+    fontFamily: 'monospace',
+    backgroundColor: '#ffffff',
+    padding: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 4,
   },
 });
